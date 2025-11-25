@@ -6,19 +6,19 @@
 // --------------------------------------------------------------------------------
 
 // WiFi Credentials
-char ssid[] = "SSID";        // your network SSID (name)
-char pass[] = "PASSWORD";    // your network password (use for WPA, or use as key for WEP)
+char ssid[] = "<<WIFI_SSID>>";        // your network SSID (name)
+char pass[] = "<<WIFI_PASSWORD>>";    // your network password (use for WPA, or use as key for WEP)
 
 // Server Endpoint Configuration
-const char* serverAddress = "SERVER_ADDRESS";  // server address (no protocol)
+const char* serverAddress = "<<SERVER_ADDRESS>>";  // server address (no protocol)
 const int serverPort = 443;                        // HTTPS port
-const char* endpoint = "ENDPOINT";         // API endpoint path
+const char* endpoint = "<<SERVER_WRITE_ENDPOINT>>";         // API endpoint path
 
 // API Authentication
-const char* apiKey = "API_KEY";
+const char* apiKey = "<<SERVER_WRITE_API_KEY>>";
 
 // Sensor ID
-const int sensorId = 1;
+const int sensorId = <<SENSOR_ID>>;
 
 // DHT Sensor Configuration
 #define DHTPIN 2     // Digital pin connected to the DHT sensor
