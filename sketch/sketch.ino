@@ -18,7 +18,7 @@ const char* endpoint = "<<SERVER_WRITE_ENDPOINT>>";         // API endpoint path
 const char* apiKey = "<<SERVER_WRITE_API_KEY>>";
 
 // Sensor ID
-const int sensorId = <<SENSOR_ID>>;
+const String sensorId = "<<SENSOR_ID>>";
 
 // DHT Sensor Configuration
 #define DHTPIN 2     // Digital pin connected to the DHT sensor
@@ -67,7 +67,7 @@ void setup() {
 
 void loop() {
   // Wait some time between measurements.
-  int waitTime = 2 * 60 * 1000 //  2 minutes
+  int waitTime = 2 * 60 * 1000; //  2 minutes
   delay(waitTime);
 
   float h = dht.readHumidity();
@@ -106,7 +106,7 @@ void loop() {
   sendPostRequest(sensorId, h, "HUMIDITY");
 }
 
-void sendPostRequest(int sensor_id, float value, const char* type) {
+void sendPostRequest(String sensor_id, float value, const char* type) {
   Serial.println();
   Serial.print("Sending POST request for ");
   Serial.print(type);
@@ -116,7 +116,7 @@ void sendPostRequest(int sensor_id, float value, const char* type) {
     Serial.println("Connected to server");
     
     // Construct JSON payload
-    String postData = "{\"sensor_id\":" + String(sensor_id) + ", \"value\": " + String(value) + ", \"type\": \"" + String(type) + "\"}";
+    String postData = "{\"source_id\": \"" + String(sensor_id) + "\", \"value\": " + String(value) + ", \"type\": \"" + String(type) + "\"}";
 
     Serial.print("Request payload: ");
     Serial.println(postData);
