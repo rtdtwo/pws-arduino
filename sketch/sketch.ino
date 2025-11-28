@@ -1,5 +1,7 @@
 #include <WiFiS3.h>
 #include <DHT.h>
+#include <ArduinoJson.h>
+
 
 // --------------------------------------------------------------------------------
 // CUSTOMIZABLE CONFIGURATION
@@ -17,8 +19,8 @@ const char* endpoint = "<<SERVER_WRITE_ENDPOINT>>";         // API endpoint path
 // API Authentication
 const char* apiKey = "<<SERVER_WRITE_API_KEY>>";
 
-// Sensor ID
-const String sensorId = "<<SENSOR_ID>>";
+// Source ID
+const String sourceId = "<<SOURCE_ID>>";
 
 // DHT Sensor Configuration
 #define DHTPIN 2     // Digital pin connected to the DHT sensor
@@ -101,22 +103,34 @@ void loop() {
       Serial.println("WiFi reconnected successfully");
   }
 
-  // Send two separate POST requests - one for temperature, one for humidity
-  sendPostRequest(sensorId, t, "TEMPERATURE");
-  sendPostRequest(sensorId, h, "HUMIDITY");
+  DynamicJsonDocument requestDoc(256);
+  // Put source ID
+  requestDoc["source_id"] = sourceId;
+
+  JsonArray dataArray = requestDoc.createNestedArray("data");
+  buildSensorDataJson(dataArray.add<JsonObject>(), t, "TEMPERATURE");
+  buildSensorDataJson(dataArray.add<JsonObject>(), h, "HUMIDITY");
+
+  // Send the post request
+  sendPostRequest(requestDoc);
 }
 
-void sendPostRequest(String sensor_id, float value, const char* type) {
+void buildSensorDataJson(JsonObject obj, float value, String type) {
+  obj["value"] = value;
+  obj["type"] = type;
+}
+
+void sendPostRequest(JsonDocument data) {
   Serial.println();
-  Serial.print("Sending POST request for ");
-  Serial.print(type);
+  Serial.print("Sending POST request");
   Serial.println("...");
   
   if (client.connect(serverAddress, serverPort)) {
     Serial.println("Connected to server");
     
     // Construct JSON payload
-    String postData = "{\"source_id\": \"" + String(sensor_id) + "\", \"value\": " + String(value) + ", \"type\": \"" + String(type) + "\"}";
+    String postData;
+    serializeJson(data, postData);
 
     Serial.print("Request payload: ");
     Serial.println(postData);
