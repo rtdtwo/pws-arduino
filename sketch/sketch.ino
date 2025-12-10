@@ -1,5 +1,6 @@
 #include <WiFiS3.h>
 #include <DHT.h>
+#include <Adafruit_DPS310.h>
 #include <ArduinoJson.h>
 
 
@@ -22,13 +23,14 @@ const char* apiKey = "<<SERVER_WRITE_API_KEY>>";
 // Source ID
 const String sourceId = "<<SOURCE_ID>>";
 
-// DHT Sensor Configuration
-#define DHTPIN 2     // Digital pin connected to the DHT sensor
-#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+// DPS310 Sensor - Air Pressure & Temperature
+Adafruit_DPS310 dpsSensor;
+
+// DHT22 Sensor - Temperature & Humidity
+DHT dht(2, DHT22);
 
 // --------------------------------------------------------------------------------
 
-DHT dht(DHTPIN, DHTTYPE);
 WiFiSSLClient client; // Using WiFiSSLClient for HTTPS
 int status = WL_IDLE_STATUS;
 
@@ -38,78 +40,79 @@ void setup() {
   while (!Serial) {
     ; // wait for serial port to connect
   }
-  Serial.println("DHT22 Reader Starting...");
   
   // Initialize DHT sensor
-  dht.begin();
-  Serial.println("DHT22 sensor initialized");
+  setupDHTSensor();
 
-  // Check for the WiFi module:
-  if (WiFi.status() == WL_NO_MODULE) {
-    Serial.println("ERROR: WiFi module not found!");
-    // Communication with WiFi module failed
-    while (true);
-  }
+  // Initialize DPS310 sensor
+  setupDPSSensor();
 
-  // Attempt to connect to WiFi network:
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
-  while (status != WL_CONNECTED) {
-    // Connect to WPA/WPA2 network.
-    status = WiFi.begin(ssid, pass);
-    Serial.print(".");
-    // wait 10 seconds for connection:
-    delay(10000);
-  }
-  Serial.println();
-  Serial.println("WiFi connected successfully!");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  // Initialize WiFi
+  setupWifi();
 }
 
 void loop() {
   // Wait some time between measurements.
-  int waitTime = 2 * 60 * 1000; //  2 minutes
+  int waitTime = 3 * 60 * 1000; //  3 minutes
   delay(waitTime);
 
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
+  // Read from DHT22 sensor
+  float dhtHumidityReading = dht.readHumidity();
+  float dhtTemperatureReading = dht.readTemperature();
 
-  // Check if any reads failed - if so, skip sending data
-  if (isnan(h) || isnan(t)) {
-    Serial.println("ERROR: Failed to read from DHT sensor!");
-    return; // Don't send POST request on error
+  // Read from DPS310 sensor
+  float dpsPressureReading;
+  float dpsTemperatureReading;
+  sensors_event_t temp_event, pressure_event;
+  if (dpsSensor.temperatureAvailable() && dpsSensor.pressureAvailable()) {
+    dpsSensor.getEvents(&temp_event, &pressure_event);
+    dpsPressureReading = pressure_event.pressure;
+    dpsTemperatureReading = temp_event.temperature;
   }
 
-  Serial.println("--- Sensor Reading ---");
-  Serial.print("Temperature: ");
-  Serial.print(t);
-  Serial.println(" °C");
-  Serial.print("Humidity: ");
-  Serial.print(h);
-  Serial.println(" %");
+  // Don't send a POST request if there's no data
+  if (isnan(dhtHumidityReading) && isnan(dpsTemperatureReading) && isnan(dpsPressureReading)) {
+    Serial.println("ERROR: No sensor returned any reportable value!");
+    return;
+  }
+
+  Serial.println("--- Sensor Readings ---");
+  Serial.print("DHT22 Temperature: ");
+  Serial.print(dhtTemperatureReading);
+  Serial.println("°C");
+  Serial.print("DHT22 Humidity: ");
+  Serial.print(dhtHumidityReading);
+  Serial.println("%");
+  Serial.print("DPS310 Pressure: ");
+  Serial.print(dpsPressureReading);
+  Serial.println(" mb");
+  Serial.print("DPS310 Temperature: ");
+  Serial.print(dpsTemperatureReading);
+  Serial.println("°C");
   Serial.println("---------------------");
 
-  // Check WiFi connection
-  if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("ERROR: WiFi disconnected! Attempting to reconnect...");
-      // Try to reconnect
-      status = WiFi.begin(ssid, pass);
-      if (status != WL_CONNECTED) {
-          Serial.println("ERROR: WiFi reconnection failed!");
-          // If still not connected, we can't send data.
-          return; 
-      }
-      Serial.println("WiFi reconnected successfully");
-  }
+  checkWifiConnectionAndReconnectIfNeeded();
 
   DynamicJsonDocument requestDoc(256);
   // Put source ID
   requestDoc["source_id"] = sourceId;
 
   JsonArray dataArray = requestDoc.createNestedArray("data");
-  buildSensorDataJson(dataArray.add<JsonObject>(), t, "TEMPERATURE");
-  buildSensorDataJson(dataArray.add<JsonObject>(), h, "HUMIDITY");
+
+  // Include Temperature only if it is not null
+  if (!isnan(dpsTemperatureReading)) {
+    buildSensorDataJson(dataArray.add<JsonObject>(), dpsTemperatureReading, "TEMPERATURE");
+  }
+
+  // Include Temperature only if it is not null
+  if (!isnan(dhtHumidityReading)) {
+    buildSensorDataJson(dataArray.add<JsonObject>(), dhtHumidityReading, "HUMIDITY");
+  }
+
+  // Include pressure only if it is not null or zero
+  if (!isnan(dpsPressureReading)) {
+    buildSensorDataJson(dataArray.add<JsonObject>(), dpsPressureReading, "PRESSURE");
+  }
 
   // Send the post request
   sendPostRequest(requestDoc);
@@ -185,4 +188,60 @@ void sendPostRequest(JsonDocument data) {
   
   client.stop();
   Serial.println("Connection closed");
+}
+
+
+void setupWifi() {
+// Check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("ERROR: WiFi module not found!");
+    // Communication with WiFi module failed
+    while (true);
+  }
+
+  // Attempt to connect to WiFi network:
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+
+  while (status != WL_CONNECTED) {
+    // Connect to WPA/WPA2 network.
+    status = WiFi.begin(ssid, pass);
+    Serial.print(".");
+    // wait 10 seconds for connection
+    delay(10000);
+  }
+  Serial.println();
+  Serial.println("WiFi connected successfully!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+void setupDHTSensor() {
+  dht.begin();
+  Serial.println("DHT22 sensor initialized");
+}
+
+
+void setupDPSSensor() {
+  if (!dpsSensor.begin_I2C()) {
+    Serial.println("Failed to initialize DPS310 sensor");
+  }
+  Serial.println("DPS310 sensor initialized");
+  delay(1000);
+}
+
+void checkWifiConnectionAndReconnectIfNeeded() {
+  // Check WiFi connection
+  if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("ERROR: WiFi disconnected! Attempting to reconnect...");
+      // Try to reconnect
+      status = WiFi.begin(ssid, pass);
+      if (status != WL_CONNECTED) {
+          Serial.println("ERROR: WiFi reconnection failed!");
+          // If still not connected, we can't send data.
+          return;
+      }
+      Serial.println("WiFi reconnected successfully");
+  }
 }
