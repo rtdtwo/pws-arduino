@@ -53,7 +53,7 @@ void setup() {
 
 void loop() {
   // Wait some time between measurements.
-  int waitTime = 3 * 60 * 1000; //  3 minutes
+  int waitTime = <<SENSOR_WAIT_TIME>> * 60 * 1000; // <<SENSOR_WAIT_TIME>> minutes
   delay(waitTime);
 
   // Read from DHT22 sensor
