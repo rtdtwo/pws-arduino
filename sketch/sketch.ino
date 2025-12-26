@@ -23,11 +23,46 @@ const char* apiKey = "<<SERVER_WRITE_API_KEY>>";
 // Source ID
 const String sourceId = "<<SOURCE_ID>>";
 
+
+// --------------------------------------------------------------------------------
+// SENSOR SETUP
+// --------------------------------------------------------------------------------
+
 // DPS310 Sensor - Air Pressure & Temperature
 Adafruit_DPS310 dpsSensor;
 
 // DHT22 Sensor - Temperature & Humidity
 DHT dht(2, DHT22);
+
+
+// --------------------------------------------------------------------------------
+// DATA PERSISTENCE
+// --------------------------------------------------------------------------------
+
+class Measurement {
+  public:
+    float value = -100.0f;
+    int index = -1;
+    String dataType = "";
+    bool isPopulated = false;
+
+    Measurement() = default;
+
+    Measurement(float v, int i, String t)  {
+      value = v;
+      index = i;
+      dataType = t;
+      isPopulated = true;
+      Serial.println("PERSIST: " + String(v) + " // " + String(i) + " // " + t);
+    }
+};
+
+// Calculate how many data points to persist based on measurement wait time.
+// We want to measure every <<MEASUREMENT_WAIT_TIME>> minutes, divide by <<MEASUREMENT_WAIT_TIME>>
+// and then, since we measure temperature, humidity, and pressure, multiply by 3
+int persistenceCapacity = (<<PUBLISH_WAIT_TIME>> / <<MEASUREMENT_WAIT_TIME>>) * 3;
+Measurement measurements[persistenceCapacity];
+int measurementIndex = 0;
 
 // --------------------------------------------------------------------------------
 
@@ -53,7 +88,8 @@ void setup() {
 
 void loop() {
   // Wait some time between measurements.
-  int waitTime = <<SENSOR_WAIT_TIME>> * 60 * 1000; // <<SENSOR_WAIT_TIME>> minutes
+  int maxLoops = persistenceCapacity / 3;
+  int waitTime = <<MEASUREMENT_WAIT_TIME>> * 60 * 1000; // <<MEASUREMENT_WAIT_TIME>> minutes
   delay(waitTime);
 
   // Read from DHT22 sensor
@@ -61,8 +97,8 @@ void loop() {
   float dhtTemperatureReading = dht.readTemperature();
 
   // Read from DPS310 sensor
-  float dpsPressureReading;
-  float dpsTemperatureReading;
+  float dpsPressureReading = NAN;
+  float dpsTemperatureReading = NAN;
   sensors_event_t temp_event, pressure_event;
   if (dpsSensor.temperatureAvailable() && dpsSensor.pressureAvailable()) {
     dpsSensor.getEvents(&temp_event, &pressure_event);
@@ -70,57 +106,61 @@ void loop() {
     dpsTemperatureReading = temp_event.temperature;
   }
 
-  // Don't send a POST request if there's no data
-  if (isnan(dhtHumidityReading) && isnan(dpsTemperatureReading) && isnan(dpsPressureReading)) {
-    Serial.println("ERROR: No sensor returned any reportable value!");
-    return;
-  }
+  int basePersistenceArrayIndex = measurementIndex * 3;
 
-  Serial.println("--- Sensor Readings ---");
-  Serial.print("DHT22 Temperature: ");
-  Serial.print(dhtTemperatureReading);
-  Serial.println("°C");
-  Serial.print("DHT22 Humidity: ");
-  Serial.print(dhtHumidityReading);
-  Serial.println("%");
-  Serial.print("DPS310 Pressure: ");
-  Serial.print(dpsPressureReading);
-  Serial.println(" mb");
-  Serial.print("DPS310 Temperature: ");
-  Serial.print(dpsTemperatureReading);
-  Serial.println("°C");
-  Serial.println("---------------------");
-
-  checkWifiConnectionAndReconnectIfNeeded();
-
-  DynamicJsonDocument requestDoc(256);
-  // Put source ID
-  requestDoc["source_id"] = sourceId;
-
-  JsonArray dataArray = requestDoc.createNestedArray("data");
-
-  // Include Temperature only if it is not null
-  if (!isnan(dpsTemperatureReading)) {
-    buildSensorDataJson(dataArray.add<JsonObject>(), dpsTemperatureReading, "TEMPERATURE");
-  }
-
-  // Include Temperature only if it is not null
   if (!isnan(dhtHumidityReading)) {
-    buildSensorDataJson(dataArray.add<JsonObject>(), dhtHumidityReading, "HUMIDITY");
+    measurements[basePersistenceArrayIndex] = Measurement(dhtHumidityReading, measurementIndex, "HUMIDITY");
   }
 
-  // Include pressure only if it is not null or zero
+  if (!isnan(dhtTemperatureReading) && !isnan(dpsTemperatureReading)) {
+    float tempToReport = ((dpsTemperatureReading + dhtTemperatureReading) / 2.0f);
+    measurements[basePersistenceArrayIndex + 1] = Measurement(tempToReport, measurementIndex, "TEMPERATURE");
+  }
+
   if (!isnan(dpsPressureReading)) {
-    buildSensorDataJson(dataArray.add<JsonObject>(), dpsPressureReading, "PRESSURE");
+    measurements[basePersistenceArrayIndex + 2] = Measurement(dpsPressureReading, measurementIndex, "PRESSURE");
   }
 
-  // Send the post request
-  sendPostRequest(requestDoc);
+  if (measurementIndex == (maxLoops - 1)) {
+    checkWifiConnectionAndReconnectIfNeeded();
+    bool shouldSendData = false;
+
+    DynamicJsonDocument requestDoc(2048);
+    requestDoc["source_id"] = sourceId;
+    JsonArray dataArray = requestDoc.createNestedArray("data");
+
+    for (int i = 0; i < persistenceCapacity; i++) {
+      Measurement m = measurements[i];
+      if (m.isPopulated) {
+        shouldSendData = true;
+        buildSensorDataJson(dataArray.add<JsonObject>(), m.index, m.value, m.dataType);
+      }
+    }
+
+    // Don't send a POST request if there's no data
+    if (shouldSendData) {
+      sendPostRequest(requestDoc);
+    } else {
+      Serial.println("ERROR: No sensor returned any reportable value!");
+    }
+
+    resetMeasurementArray();
+    measurementIndex = 0;
+  } else {
+    measurementIndex = measurementIndex + 1;
+  }
 }
 
-void buildSensorDataJson(JsonObject obj, float value, String type) {
+void resetMeasurementArray() {
+  for (int i = 0; i < persistenceCapacity; i++) {
+    measurements[i] = Measurement();
+  }
+}
+
+void buildSensorDataJson(JsonObject obj, int index, float value, String dataType) {
+  obj["index"] = index;
   obj["value"] = value;
-  obj["type"] = type;
+  obj["type"] = dataType;
 }
 
 void sendPostRequest(JsonDocument data) {
@@ -219,6 +259,9 @@ void setupWifi() {
 
 void setupDHTSensor() {
   dht.begin();
+  // Dummy read to clear the sensor's internal register
+  dht.readHumidity();
+  dht.readTemperature();
   Serial.println("DHT22 sensor initialized");
 }
 
