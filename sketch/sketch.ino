@@ -60,7 +60,7 @@ class Measurement {
 // Calculate how many data points to persist based on measurement wait time.
 // We want to measure every <<MEASUREMENT_WAIT_TIME>> minutes, divide by <<MEASUREMENT_WAIT_TIME>>
 // and then, since we measure temperature, humidity, and pressure, multiply by 3
-int persistenceCapacity = (<<PUBLISH_WAIT_TIME>> / <<MEASUREMENT_WAIT_TIME>>) * 3;
+const int persistenceCapacity = (<<PUBLISH_WAIT_TIME>> / <<MEASUREMENT_WAIT_TIME>>) * 3;
 Measurement measurements[persistenceCapacity];
 int measurementIndex = 0;
 
