@@ -15,7 +15,7 @@ The Python component manages the interaction between your computer and the Ardui
 
 ### Environment Configuration
 Create a `.env` file in the `/python` directory. Include the following variables:
-```
+```env
 # WiFi credentials
 WIFI_SSID=your_wifi_ssid
 WIFI_PASSWORD=your_wifi_password
