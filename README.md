@@ -4,7 +4,7 @@ This repository contains the Arduino source code for my DIY personal weather sta
 Part of my full-stack DIY Personal Weather Station project:
 - [Frontend](https://github.com/rtdtwo/pws-frontend) - The web interface to visualize the data.
 - [Backend](https://github.com/rtdtwo/pws-backend) - The REST API to store and retrieve data from a SQL server.
-- [Arduino](https://github.com/rtdtwo/pws-arduino) - The senor hardware logic (you are here).
+- [Arduino](https://github.com/rtdtwo/pws-arduino) - The sensor hardware logic (you are here).
 
 ## Repository Structure
 - **/python**: Contains scripts for local data logging and environment-based sketch configuration.
